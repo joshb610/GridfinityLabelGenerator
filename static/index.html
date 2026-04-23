@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gridfinity Label Generator</title>
+  <link rel="stylesheet" href="/static/style.css">
+
+  <!-- Three.js ES module imports -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+
+<header>
+  <h1>Gridfinity Label Generator</h1>
+  <span class="tagline">Build and export custom bin labels</span>
+  <div class="header-actions">
+    <button class="btn btn-secondary btn-sm" id="import-btn" title="Load a previously exported session file (.json) to restore all labels">Import JSON</button>
+    <button class="btn btn-secondary btn-sm" id="export-btn" title="Save all current labels to a JSON file — back up or share your session">Export JSON</button>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ── LEFT: Label list ── -->
+  <div class="panel" id="label-list-panel">
+    <div class="panel-header">
+      <span title="All labels queued for download">Labels</span>
+      <span id="label-count" style="color:var(--text-faint)" title="Number of labels in queue">0</span>
+    </div>
+    <div class="panel-body" id="label-list"></div>
+    <button class="add-label-btn" id="add-label-btn" title="Add a new label — settings are inherited from the last label">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add Label
+    </button>
+  </div>
+
+  <!-- ── CENTER: Editor ── -->
+  <div class="panel" id="editor-panel">
+    <div class="panel-header">
+      <span>Editor</span>
+      <span id="editing-label-name" style="color:var(--accent);font-weight:500;font-size:12px"></span>
+    </div>
+
+    <div class="editor-body" id="editor-body">
+      <div class="empty-state" id="empty-state">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="15" x2="12" y2="15"/>
+        </svg>
+        <p><strong>Gridfinity Label Generator</strong></p>
+        <ol class="getting-started">
+          <li>Click <strong>Add Label</strong> to create a label</li>
+          <li>Set <strong>Width</strong> in Gridfinity units (u) or mm</li>
+          <li>Type your <strong>content</strong> — or pick a symbol from the Fragment Picker →</li>
+          <li>Click <strong>Preview 3D</strong> to see a 3D render (auto-saved on switch)</li>
+          <li>Click <strong>Download All</strong> at the bottom to export for printing</li>
+        </ol>
+        <button class="btn btn-secondary btn-sm" id="empty-add-btn">Add Label</button>
+        <p class="field-hint">Tip: drag labels in the list to reorder · drag the divider to resize panels</p>
+        <p class="field-hint">Import / Export JSON in the header to save or restore your session</p>
+      </div>
+
+      <div id="editor-form" style="display:none;flex-direction:column;gap:16px">
+
+        <!-- Name -->
+        <div class="section">
+          <div class="field">
+            <label>Label Name</label>
+            <input type="text" id="f-name" placeholder="e.g. M3x16_screws"
+              title="Internal label name — also used as the filename when downloading. Auto-generated from content if left untouched.">
+          </div>
+        </div>
+
+        <!-- Physical dimensions -->
+        <div class="section">
+          <div class="section-title">Dimensions</div>
+          <div class="field-row">
+            <div class="field">
+              <label>Width</label>
+              <input type="number" id="f-width" value="1" min="0.1" step="0.5"
+                title="Label width. In Gridfinity units (u): 1u ≈ 37.8 mm usable, 2u ≈ 79.8 mm, etc. Switch unit to mm for exact sizes.">
+            </div>
+            <div class="field">
+              <label>Unit</label>
+              <select id="f-width-unit" title="Gridfinity units (u) snap to standard bin widths. mm lets you specify any size.">
+                <option value="u">u (gridfinity)</option>
+                <option value="mm">mm</option>
+              </select>
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Height (mm, optional)</label>
+              <input type="number" id="f-height" placeholder="auto" min="9" step="0.5"
+                title="Label face height in mm. Leave blank for the base default (Pred = 11.5 mm). Pred base requires ≥ 9 mm minimum.">
+            </div>
+            <div class="field">
+              <label>Text depth (mm)</label>
+              <input type="number" id="f-depth" value="0.4" min="0.1" step="0.1"
+                title="How far the embossed text / background is raised or recessed (default 0.4 mm). Does not affect label body thickness.">
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Body thickness (mm)</label>
+              <input type="number" id="f-body-depth" placeholder="auto (0.4)" min="0.4" step="0.1"
+                title="Total label body thickness in mm. Values above 0.4 mm add an extra solid slab beneath the label in the text color, making the label more rigid. Leave blank for the standard 0.4 mm thin label.">
+            </div>
+          </div>
+        </div>
+
+        <!-- Base & style -->
+        <div class="section">
+          <div class="section-title">Base &amp; Style</div>
+          <div class="field-row">
+            <div class="field">
+              <label>Base Type</label>
+              <select id="f-base" title="The clip/mount that attaches the label to the bin. Pred is the most common universal clip. Pred Box is for larger storage boxes. Plain = flat rectangle, no clip. None = label face only (no base at all).">
+                <option value="pred">Pred</option>
+                <option value="predbox">Pred Box</option>
+                <option value="plain">Plain</option>
+                <option value="cullenect">Cullenect</option>
+                <option value="modern">Modern</option>
+                <option value="none">None (no base)</option>
+              </select>
+            </div>
+            <div class="field" id="version-field" style="display:none">
+              <label>Version</label>
+              <select id="f-version" title="Cullenect base version to target">
+                <option value="latest">latest</option>
+                <option value="v1.1">v1.1</option>
+                <option value="v2.0.0">v2.0.0</option>
+                <option value="v2+">v2+</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label>Label Style</label>
+            <div class="radio-group" title="Embossed: text stands above the face (most common). Debossed: text pressed into the face. Embedded: text sits in a pocket — designed for multi-color printing.">
+              <div class="radio-pill"><input type="radio" name="style" id="style-embossed" value="embossed" checked><label for="style-embossed" title="Text / icons raised above the label face">Embossed</label></div>
+              <div class="radio-pill"><input type="radio" name="style" id="style-debossed" value="debossed"><label for="style-debossed" title="Text / icons pressed into the label face">Debossed</label></div>
+              <div class="radio-pill"><input type="radio" name="style" id="style-embedded" value="embedded"><label for="style-embedded" title="Text / icons recessed flush — ideal for multi-material filament swaps">Embedded</label></div>
+            </div>
+          </div>
+          <p class="field-hint">Use <strong>Embossed</strong> for single-color prints. For two-color (AMS/MMU), set Style to Embedded and enable Multi-material below.</p>
+        </div>
+
+        <!-- Divisions & label content -->
+        <div class="section">
+          <div class="section-title">Content</div>
+          <div class="field-row">
+            <div class="field">
+              <label>Divisions</label>
+              <input type="number" id="f-divisions" value="1" min="1" max="8" step="1" class="narrow"
+                title="Split the label into this many equal sections, each with independent content. Useful for labeling both sides of a label or packing multiple sizes on one print.">
+            </div>
+            <div class="field">
+              <label>Output Format</label>
+              <select id="f-format" title="STEP is recommended — smaller files, better for slicers that support it. STL is universal but larger. For multi-material, STEP gives cleaner boolean results.">
+                <option value="step">STEP</option>
+                <option value="stl">STL</option>
+              </select>
+            </div>
+          </div>
+          <div id="divisions-container"></div>
+          <p class="field-hint">Type text or use the <strong>Fragment Picker</strong> on the right to insert icons. Click inside a text field first, then click a fragment to insert it at the cursor.</p>
+        </div>
+
+        <!-- Font -->
+        <div class="section">
+          <div class="collapsible-header" data-target="font-body" title="Click to expand/collapse font settings">
+            <div class="section-title" style="border:none;padding:0">Font</div>
+            <span class="chevron">▾</span>
+          </div>
+          <div class="collapsible-body" id="font-body">
+            <div style="display:flex;flex-direction:column;gap:8px;padding-top:8px">
+              <div class="field-row">
+                <div class="field">
+                  <label>Style</label>
+                  <select id="f-font-style" title="Font weight/style variant">
+                    <option value="regular">Regular</option>
+                    <option value="bold" selected>Bold</option>
+                    <option value="italic">Italic</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Custom font name</label>
+                  <input type="text" id="f-font" placeholder="system font name"
+                    title="Override the built-in font with any font installed on the server (e.g. Arial, Helvetica, Impact). Leave blank to use the default built-in font.">
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label>Exact size (mm)</label>
+                  <input type="number" id="f-font-size" placeholder="auto" min="0.5" step="0.5"
+                    title="Force text to exactly this height in mm, ignoring the available space. Leave blank to auto-fit.">
+                </div>
+                <div class="field">
+                  <label>Max size (mm)</label>
+                  <input type="number" id="f-font-size-max" placeholder="auto" min="0.5" step="0.5"
+                    title="Cap auto-sized text at this maximum height in mm. Useful when you want text to scale down but not too large.">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Advanced -->
+        <div class="section">
+          <div class="collapsible-header collapsed" data-target="advanced-body" title="Click to expand/collapse advanced layout settings">
+            <div class="section-title" style="border:none;padding:0">Advanced</div>
+            <span class="chevron">▾</span>
+          </div>
+          <div class="collapsible-body collapsed" id="advanced-body">
+            <div style="display:flex;flex-direction:column;gap:8px;padding-top:8px">
+              <div class="field-row">
+                <div class="field">
+                  <label>Margin (mm)</label>
+                  <input type="number" id="f-margin" placeholder="default" min="0" step="0.1"
+                    title="Space between the text/icons and the edge of the label face (mm). Leave blank to use the base default.">
+                </div>
+                <div class="field">
+                  <label>Label gap (mm)</label>
+                  <input type="number" id="f-label-gap" value="2" min="0" step="0.5"
+                    title="Vertical gap between stacked labels when generating a batch with multiple divisions (mm).">
+                </div>
+                <div class="field">
+                  <label>Column gap (mm)</label>
+                  <input type="number" id="f-col-gap" value="0.4" min="0" step="0.1"
+                    title="Horizontal gap between left and right columns in a split/column layout (mm).">
+                </div>
+              </div>
+              <div class="toggle-row">
+                <span title="When enabled, text that is taller than the label face will NOT be automatically scaled down — it may be clipped">Disable overheight scaling</span>
+                <label class="toggle"><input type="checkbox" id="f-no-overheight"><span class="toggle-slider"></span></label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Multi-material -->
+        <div class="section">
+          <div class="field">
+            <label>Multi-material</label>
+            <select id="f-multimaterial" title="Split the label into two files for two-color printing (AMS, MMU, filament swap). Each mode produces a _body and _text file.">
+              <option value="none">Off — single file</option>
+              <option value="text">Text only — body + raised text</option>
+              <option value="split">Split at face — base below / rim+text above</option>
+              <option value="background">Background — bg face slab, text fills body</option>
+              <option value="background_full">Background (filled) — bg fills body, text is rim</option>
+            </select>
+          </div>
+          <p id="mm-note" style="font-size:11px;color:var(--text-faint);margin-top:4px;display:none"></p>
+          <p class="field-hint">For two-color printing: choose a mode, set Output Format to STEP, then load both _body and _text files into your slicer as separate objects with different filaments.</p>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="editor-footer" id="editor-footer" style="display:none">
+      <button class="btn btn-secondary" id="preview-btn" title="Generate a 3D preview of this label in the panel on the right">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        Preview 3D
+      </button>
+      <button class="btn btn-secondary" id="save-label-btn" title="Save all changes to this label (Ctrl+S / Cmd+S) — changes are also auto-saved when switching labels">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Save Changes
+      </button>
+      <button class="btn btn-danger btn-sm" id="delete-label-btn" style="margin-left:auto" title="Permanently remove this label from the queue">Delete</button>
+    </div>
+  </div>
+
+  <!-- ── Resize handle ── -->
+  <div class="resize-handle" id="resize-handle" title="Drag to resize panels"></div>
+
+  <!-- ── RIGHT: Preview + Fragment Picker ── -->
+  <div class="panel" id="right-panel">
+
+    <!-- 3D Preview -->
+    <div class="panel-header">
+      <span>3D Preview</span>
+      <button class="icon-btn" id="reset-cam-btn" title="Reset camera to default position">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
+      </button>
+    </div>
+    <div class="preview-body" id="preview-body">
+      <canvas id="preview-canvas"></canvas>
+      <div class="preview-overlay" id="preview-overlay">
+        <div class="preview-placeholder">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+          <p>Click "Preview 3D"<br>to render this label</p>
+        </div>
+      </div>
+    </div>
+    <div class="preview-footer">
+      <span class="preview-label-name" id="preview-label-name">No preview</span>
+      <span id="preview-stale" style="display:none" title="Settings have changed since this preview was generated — click Preview 3D to refresh">⚠ outdated</span>
+      <span style="font-size:10px;color:var(--text-faint)" title="Mouse: left-drag rotate · right-drag/middle pan · scroll zoom · Arrow keys pan when preview focused">Drag·Scroll·Arrows</span>
+    </div>
+
+    <!-- Fragment Picker -->
+    <div class="frag-picker-panel">
+      <div class="panel-header" style="border-top:1px solid var(--border)">
+        <span title="Click a label text field first, then click a fragment to insert it at the cursor position">Fragment Picker</span>
+        <span style="font-size:10px;color:var(--text-faint)" id="frag-target-hint">focus a label field first</span>
+      </div>
+
+      <!-- Category tabs -->
+      <div class="frag-tabs" id="frag-tabs"></div>
+
+      <!-- Fragment grid -->
+      <div class="frag-grid-wrap">
+        <div class="frag-grid" id="frag-grid"></div>
+      </div>
+
+      <!-- Param form (shown when parameterized fragment is selected) -->
+      <div class="frag-param-panel" id="frag-param-panel" style="display:none">
+        <div class="frag-param-title" id="frag-param-title"></div>
+        <div class="frag-param-fields" id="frag-param-fields"></div>
+        <div class="frag-param-preview" id="frag-param-preview"></div>
+        <div class="frag-param-actions">
+          <button class="btn btn-secondary btn-sm" id="frag-param-cancel">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="frag-param-insert" title="Insert this fragment at the cursor in the focused label field">Insert</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- ── Generate bar ── -->
+<div class="generate-bar">
+  <div class="generate-bulk">
+    <span class="bulk-label" title="Apply a setting to every label in the queue at once">Set all:</span>
+    <select id="bulk-base" title="Change the base type for every label simultaneously">
+      <option value="">Base…</option>
+      <option value="pred">Pred</option>
+      <option value="predbox">Pred Box</option>
+      <option value="plain">Plain</option>
+      <option value="cullenect">Cullenect</option>
+      <option value="modern">Modern</option>
+      <option value="none">None</option>
+    </select>
+    <select id="bulk-format" title="Change the output format (STEP or STL) for every label">
+      <option value="">Format…</option>
+      <option value="step">STEP</option>
+      <option value="stl">STL</option>
+    </select>
+    <select id="bulk-multimaterial" title="Change the multi-material mode for every label">
+      <option value="">Multi-mat…</option>
+      <option value="none">Single file</option>
+      <option value="text">Text split</option>
+      <option value="split">Face split</option>
+      <option value="background">Background</option>
+      <option value="background_full">Background (filled)</option>
+    </select>
+  </div>
+  <div class="generate-actions">
+    <span class="summary" id="generate-summary">No labels in queue</span>
+    <button class="btn btn-secondary btn-sm" id="clear-all-btn" title="Remove all labels from the queue (asks for confirmation)">Clear All</button>
+    <button class="btn btn-primary" id="generate-btn" disabled title="Generate all labels and download them as a ZIP archive">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download All
+    </button>
+  </div>
+</div>
+
+<div id="toast"></div>
+<input type="file" id="file-input" accept=".json" style="display:none">
+
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

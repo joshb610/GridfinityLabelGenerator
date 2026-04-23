@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+build123d
+pint
+python-multipart
